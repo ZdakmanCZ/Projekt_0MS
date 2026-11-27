@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import time
 import pandas as pd
@@ -28,7 +30,9 @@ RESULTS_CSV_PATH = "vysledky/souhrn_modelu.csv"
 
 def save_results_to_csv(summary_df: pd.DataFrame, output_path: str) -> None:
     """Uloží souhrnnou tabulku výsledků do CSV (utf-8-sig kvůli správné diakritice v Excelu)."""
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    parent = os.path.dirname(output_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     summary_df.to_csv(output_path, index=False, encoding="utf-8-sig")
     print(f"[INFO] Souhrnné výsledky uloženy do: {output_path}")
 
@@ -56,10 +60,10 @@ def main() -> None:
         )
     except FileNotFoundError as exc:
         print(f"[CHYBA] Vstupní dataset nebyl nalezen: {exc}")
-        print("Zkontroluj, že soubory 'data/train.csv' a 'data/test.csv' existují.")
+        print(f"Zkontroluj, že soubory '{TRAIN_PATH}' a '{TEST_PATH}' existují.")
         return
 
-    print(f"\n[INFO] Data připravena: X_train={X_train.shape}, X_test={X_test.shape}\n")
+    print(f"[INFO] Data připravena: X_train={X_train.shape}, X_test={X_test.shape}\n")
 
     # 2. Trénování a vyhodnocení modelů: Decision Tree, Random Forest, SVM (MethodsML.py)
     print("=" * 60)
