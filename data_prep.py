@@ -50,9 +50,6 @@ def priprav_data(train_path="data/train.csv", test_path="data/test.csv"):
     train_df = train_df.drop(columns=["Arrival Delay in Minutes"])
     test_df = test_df.drop(columns=["Arrival Delay in Minutes"])
 
-    # Pro rychlý test kódu (kvůli pomalejšímu SVM) odkomentuj řádek níže:
-    # train_df = train_df.sample(15000, random_state=42)
-
     # 5. Oddělení vstupů (X) a cílové proměnné (y: 1 = satisfied, 0 = neutral/dissatisfied)
     y_train = (train_df["satisfaction"] == "satisfied").astype(int)
     y_test = (test_df["satisfaction"] == "satisfied").astype(int)
