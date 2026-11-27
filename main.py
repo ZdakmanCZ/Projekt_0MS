@@ -1,33 +1,15 @@
+# %%
 import sys
+import time
 from pathlib import Path
+from typing import Union
 
-def find_project_dir(target_file: str = "data_prep.py") -> Path:
-    if "__file__" in globals():
-        return Path(__file__).resolve().parent
+import pandas as pd
 
-    cwd = Path.cwd()
-    candidates = [
-        cwd,
-        *[p.parent for p in cwd.glob(f"*/{target_file}")],
-        *[p.parent for p in cwd.glob(f"*/*/{target_file}")],
-        *list(cwd.parents)[:2],
-    ]
-    for folder in candidates:
-        if (folder / target_file).exists():
-            return folder
-
-    obsah = [p.name for p in cwd.iterdir()]
-    raise FileNotFoundError(
-        f"Soubor '{target_file}' nebyl nalezen.\n"
-        f"Aktuální složka (cwd): {cwd}\n"
-        f"Soubory v této složce: {obsah}"
-    )
-
-BASE_DIR = find_project_dir("data_prep.py")
+# Bezpečné určení kořenové složky projektu (funguje pro běžný běh i pro buňky # %%)
+BASE_DIR = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
-
-print(f"[INFO] Projektová složka: {BASE_DIR}")
 
 from data_prep import prepare_data  # noqa: E402
 from MethodsML import (  # noqa: E402
