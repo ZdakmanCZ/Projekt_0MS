@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import os
+import re
 import time
 import numpy as np
 import pandas as pd
@@ -18,8 +21,15 @@ from sklearn.metrics import (
 
 
 def _slugify(text: str) -> str:
-    """Převede název modelu na bezpečný název souboru."""
-    return text.lower().replace(" ", "_").replace("(", "").replace(")", "")
+    """Převede název modelu na bezpečný řetězec pro název souboru."""
+    return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
+
+
+def _ensure_parent_dir(file_path: str) -> None:
+    """Bezpečně vytvoří nadřazenou složku, pokud je v cestě uvedena."""
+    parent = os.path.dirname(file_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
 
 
 def plot_confusion_matrix(
@@ -27,8 +37,8 @@ def plot_confusion_matrix(
     model_name: str,
     output_path: str,
 ) -> None:
-    """Vykreslí a uloží matici záměn s přesnými počty TN, FP, FN, TP."""
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    """Vykreslí a uloží matici záměn s přesnými popisky TN, FP, FN, TP."""
+    _ensure_parent_dir(output_path)
 
     tn, fp, fn, tp = cm.ravel()
     annot_labels = np.array([
@@ -36,6 +46,7 @@ def plot_confusion_matrix(
         [f"FN\n{fn}", f"TP\n{tp}"],
     ])
 
+    labels = ["Nespokojený / Neutrální (0)", "Spokojený (1)"]
     plt.figure(figsize=(6.5, 5.5))
     sns.heatmap(
         cm,
@@ -43,17 +54,17 @@ def plot_confusion_matrix(
         fmt="",
         cmap="Blues",
         cbar=False,
-        xticklabels=["Nespokojený / Neutrální (0)", "Spokojený (1)"],
-        yticklabels=["Nespokojený / Neutrální (0)", "Spokojený (1)"],
+        xticklabels=labels,
+        yticklabels=labels,
         annot_kws={"size": 12, "weight": "bold"},
     )
     plt.title(f"Matice záměn – {model_name}", fontsize=13, pad=12)
-    plt.xlabel("Predikovaná třída")
-    plt.ylabel("Skutečná třída")
+    plt.xlabel("Predikovaná třída", fontsize=11)
+    plt.ylabel("Skutečná třída", fontsize=11)
     plt.tight_layout()
     plt.savefig(output_path, dpi=300)
     plt.close()
-    print(f"[INFO] Matice záměn uložena do: {output_path}")
+    print(f"  [INFO] Matice záměn uložena do: {output_path}")
 
 
 def plot_feature_importance(
@@ -63,19 +74,19 @@ def plot_feature_importance(
     top_n: int = 10,
 ) -> None:
     """Vykreslí a uloží graf nejdůležitějších příznaků pro stromové modely."""
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    _ensure_parent_dir(output_path)
 
     top_features = importances.head(top_n)[::-1]
 
     plt.figure(figsize=(9, 6))
     top_features.plot(kind="barh", color="#2b6cb0")
-    plt.title(f"Top {top_n} nejdůležitějších příznaků – {model_name}", fontsize=13, pad=12)
-    plt.xlabel("Relativní důležitost")
-    plt.ylabel("Příznak")
+    plt.title(f"Top {len(top_features)} nejdůležitějších příznaků – {model_name}", fontsize=13, pad=12)
+    plt.xlabel("Relativní důležitost", fontsize=11)
+    plt.ylabel("Příznak", fontsize=11)
     plt.tight_layout()
     plt.savefig(output_path, dpi=300)
     plt.close()
-    print(f"[INFO] Graf důležitosti příznaků uložen do: {output_path}")
+    print(f"  [INFO] Graf důležitosti příznaků uložen do: {output_path}")
 
 
 def evaluate_model(
@@ -87,22 +98,23 @@ def evaluate_model(
     y_test: pd.Series,
     save_plots: bool = True,
     output_dir: str = "grafy",
+    top_n_features: int = 10,
 ) -> dict:
-    """
-    Natrénuje model, samostatně změří časy fit a predict, spočítá metriky
-    (Accuracy, Precision, Recall, F1, TP, TN, FP, FN) a volitelně uloží grafy.
-    """
-    # 1. Trénování a měření času fit
+    """Natrénuje model, změří časy fit/predict, spočítá metriky a uloží grafy."""
+    print(f"\n{'-' * 60}")
+    print(f"[MODEL] Trénování a testování: {model_name}")
+
+    # 1. Trénování (fit)
     start_fit = time.perf_counter()
     model.fit(X_train, y_train)
     fit_time = time.perf_counter() - start_fit
 
-    # 2. Predikce a měření času predict
+    # 2. Predikce (predict)
     start_pred = time.perf_counter()
     y_pred = model.predict(X_test)
     predict_time = time.perf_counter() - start_pred
 
-    # 3. Výpočet metrik a matice záměn (0 = nespokojený/neutrální, 1 = spokojený)
+    # 3. Metriky a matice záměn (0 = neutral/dissatisfied, 1 = satisfied)
     accuracy = accuracy_score(y_test, y_pred)
     precision = precision_score(y_test, y_pred, zero_division=0)
     recall = recall_score(y_test, y_pred, zero_division=0)
@@ -111,24 +123,15 @@ def evaluate_model(
     cm = confusion_matrix(y_test, y_pred, labels=[0, 1])
     tn, fp, fn, tp = cm.ravel()
 
-    # 4. Výpis přehledu do konzole
-    print("=" * 60)
-    print(f"VÝSLEDKY MODELU: {model_name}")
-    print("=" * 60)
-    print(f"Accuracy  (Přesnost celkem): {accuracy * 100:.2f} %")
-    print(f"Precision (Přesnost třídy 1): {precision * 100:.2f} %")
-    print(f"Recall    (Úplnost třídy 1):  {recall * 100:.2f} %")
-    print(f"F1-score:                     {f1 * 100:.2f} %")
-    print("-" * 60)
-    print(f"TP (Správně spokojený):   {tp}")
-    print(f"TN (Správně nespokojený): {tn}")
-    print(f"FP (Falešně spokojený):   {fp}")
-    print(f"FN (Falešně nespokojený): {fn}")
-    print("-" * 60)
-    print(f"Čas trénování (fit):     {fit_time:.4f} s")
-    print(f"Čas predikce  (predict): {predict_time:.4f} s")
+    print(f"  Accuracy:  {accuracy * 100:.2f} %")
+    print(f"  Precision: {precision * 100:.2f} %")
+    print(f"  Recall:    {recall * 100:.2f} %")
+    print(f"  F1-score:  {f1 * 100:.2f} %")
+    print(f"  Matice záměn -> TP: {tp} | TN: {tn} | FP: {fp} | FN: {fn}")
+    print(f"  Čas fit:     {fit_time:.4f} s")
+    print(f"  Čas predict: {predict_time:.4f} s")
 
-    # 5. Důležitost příznaků (pro Decision Tree a Random Forest)
+    # 4. Důležitost příznaků (pouze stromové modely)
     feature_importances = None
     if hasattr(model, "feature_importances_") and isinstance(X_train, pd.DataFrame):
         feature_importances = pd.Series(
@@ -136,36 +139,38 @@ def evaluate_model(
             index=X_train.columns,
         ).sort_values(ascending=False)
 
-        print("-" * 60)
-        print("Top 5 nejdůležitějších příznaků:")
+        print("  Top 5 nejvlivnějších faktorů spokojenosti:")
         for feat, val in feature_importances.head(5).items():
-            print(f"  - {feat}: {val:.4f}")
+            print(f"    - {feat}: {val:.4f}")
 
-    print("=" * 60)
-
-    # 6. Uložení grafů pro poster
-    slug = _slugify(model_name)
+    # 5. Uložení grafů pro poster
     if save_plots:
+        slug = _slugify(model_name)
         cm_path = os.path.join(output_dir, f"cm_{slug}.png")
         plot_confusion_matrix(cm, model_name, cm_path)
 
         if feature_importances is not None:
-            fi_path = os.path.join(output_dir, f"feature_importance_{slug}.png")
-            plot_feature_importance(feature_importances, model_name, fi_path)
+            fi_path = os.path.join(output_dir, f"importance_{slug}.png")
+            plot_feature_importance(
+                feature_importances,
+                model_name,
+                fi_path,
+                top_n=top_n_features,
+            )
 
     return {
-        "model_name": model_name,
-        "model": model,
-        "accuracy": accuracy,
-        "precision": precision,
-        "recall": recall,
-        "f1_score": f1,
+        "Model": model_name,
+        "Accuracy (%)": round(accuracy * 100, 2),
+        "Precision (%)": round(precision * 100, 2),
+        "Recall (%)": round(recall * 100, 2),
+        "F1-score (%)": round(f1 * 100, 2),
         "TP": int(tp),
         "TN": int(tn),
         "FP": int(fp),
         "FN": int(fn),
-        "fit_time_s": fit_time,
-        "predict_time_s": predict_time,
+        "Fit čas (s)": round(fit_time, 4),
+        "Predict čas (s)": round(predict_time, 4),
+        "Celkový čas (s)": round(fit_time + predict_time, 4),
         "feature_importances": feature_importances,
     }
 
@@ -178,8 +183,9 @@ def run_decision_tree(
     max_depth: int | None = 12,
     random_state: int = 42,
     save_plots: bool = True,
+    output_dir: str = "grafy",
 ) -> dict:
-    """Spustí a vyhodnotí rozhodovací strom (DecisionTreeClassifier)."""
+    """1. model: Rozhodovací strom (DecisionTreeClassifier)."""
     model = DecisionTreeClassifier(
         max_depth=max_depth,
         random_state=random_state,
@@ -192,6 +198,7 @@ def run_decision_tree(
         y_train=y_train,
         y_test=y_test,
         save_plots=save_plots,
+        output_dir=output_dir,
     )
 
 
@@ -205,8 +212,9 @@ def run_random_forest(
     random_state: int = 42,
     n_jobs: int = -1,
     save_plots: bool = True,
+    output_dir: str = "grafy",
 ) -> dict:
-    """Spustí a vyhodnotí náhodný les (RandomForestClassifier)."""
+    """2. model: Náhodný les (RandomForestClassifier)."""
     model = RandomForestClassifier(
         n_estimators=n_estimators,
         max_depth=max_depth,
@@ -221,6 +229,7 @@ def run_random_forest(
         y_train=y_train,
         y_test=y_test,
         save_plots=save_plots,
+        output_dir=output_dir,
     )
 
 
@@ -232,17 +241,17 @@ def run_svm(
     C: float = 1.0,
     kernel: str = "rbf",
     gamma: str = "scale",
+    cache_size: float = 1000,
     random_state: int = 42,
     save_plots: bool = True,
+    output_dir: str = "grafy",
 ) -> dict:
-    """
-    Spustí a vyhodnotí SVM s nelineárním RBF jádrem (SVC).
-    Očekává data již standardizovaná z data_prep.py (scale=True).
-    """
+    """3. model: SVM s RBF jádrem (očekává standardizovaná data z data_prep.py)."""
     model = SVC(
         C=C,
         kernel=kernel,
         gamma=gamma,
+        cache_size=cache_size,
         random_state=random_state,
     )
     return evaluate_model(
@@ -253,38 +262,68 @@ def run_svm(
         y_train=y_train,
         y_test=y_test,
         save_plots=save_plots,
+        output_dir=output_dir,
     )
 
 
-def compare_results(results: list[dict], save_csv_path: str | None = "grafy/vysledky_modelu.csv") -> pd.DataFrame:
-    """Sestaví souhrnnou srovnávací tabulku všech modelů a volitelně ji uloží do CSV."""
-    rows = []
-    for res in results:
-        rows.append({
-            "Model": res["model_name"],
-            "Accuracy (%)": round(res["accuracy"] * 100, 2),
-            "Precision (%)": round(res["precision"] * 100, 2),
-            "Recall (%)": round(res["recall"] * 100, 2),
-            "F1-score (%)": round(res["f1_score"] * 100, 2),
-            "TP": res["TP"],
-            "TN": res["TN"],
-            "FP": res["FP"],
-            "FN": res["FN"],
-            "Fit čas (s)": round(res["fit_time_s"], 4),
-            "Predict čas (s)": round(res["predict_time_s"], 4),
-        })
+def run_all_models(
+    X_train: pd.DataFrame,
+    X_test: pd.DataFrame,
+    y_train: pd.Series,
+    y_test: pd.Series,
+    random_state: int = 42,
+    save_plots: bool = True,
+    output_dir: str = "grafy",
+) -> pd.DataFrame:
+    """Spustí všechny tři vybrané modely a vrátí souhrnnou srovnávací tabulku."""
+    results = [
+        run_decision_tree(
+            X_train, X_test, y_train, y_test,
+            random_state=random_state,
+            save_plots=save_plots,
+            output_dir=output_dir,
+        ),
+        run_random_forest(
+            X_train, X_test, y_train, y_test,
+            random_state=random_state,
+            save_plots=save_plots,
+            output_dir=output_dir,
+        ),
+        run_svm(
+            X_train, X_test, y_train, y_test,
+            random_state=random_state,
+            save_plots=save_plots,
+            output_dir=output_dir,
+        ),
+    ]
 
-    summary_df = pd.DataFrame(rows)
+    summary_cols = [
+        "Model",
+        "Accuracy (%)",
+        "Precision (%)",
+        "Recall (%)",
+        "F1-score (%)",
+        "TP",
+        "TN",
+        "FP",
+        "FN",
+        "Fit čas (s)",
+        "Predict čas (s)",
+        "Celkový čas (s)",
+    ]
+    return pd.DataFrame(results)[summary_cols]
 
-    print("\n" + "=" * 80)
-    print("SOUHRNNÉ POROVNÁNÍ MODELŮ")
-    print("=" * 80)
-    print(summary_df.to_string(index=False))
-    print("=" * 80)
 
-    if save_csv_path:
-        os.makedirs(os.path.dirname(save_csv_path), exist_ok=True)
-        summary_df.to_csv(save_csv_path, index=False, encoding="utf-8-sig")
-        print(f"[INFO] Souhrnná tabulka uložena do: {save_csv_path}")
+if __name__ == "__main__":
+    from data_prep import prepare_data
 
-    return summary_df
+    X_tr, X_te, y_tr, y_te = prepare_data(
+        train_path="data/train.csv",
+        test_path="data/test.csv",
+        scale=True,
+        sample_size=10000,
+        random_state=42,
+        save_corr_plot=False,
+    )
+    df_summary = run_all_models(X_tr, X_te, y_tr, y_te, random_state=42, save_plots=True)
+    print("\n" + df_summary.to_string(index=False))
