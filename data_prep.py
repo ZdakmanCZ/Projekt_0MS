@@ -1,200 +1,69 @@
-from __future__ import annotations
-
 import os
-import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.preprocessing import StandardScaler
 
 
-def _ensure_parent_dir(file_path: str) -> None:
-    """Bezpečně vytvoří nadřazenou složku, pokud je v cestě uvedena."""
-    parent = os.path.dirname(file_path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
+def priprav_data(train_path="data/train.csv", test_path="data/test.csv"):
+    os.makedirs("grafy", exist_ok=True)
 
-
-def plot_correlation_matrix(
-    df: pd.DataFrame,
-    output_path: str = "grafy/korelacni_matice.png",
-) -> None:
-    """Vykreslí a uloží korelační matici číselných sloupců pro poster."""
-    _ensure_parent_dir(output_path)
-
-    numeric_df = df.select_dtypes(include=[np.number])
-    corr = numeric_df.corr()
-
-    plt.figure(figsize=(14, 11))
-    sns.heatmap(
-        corr,
-        cmap="coolwarm",
-        center=0,
-        annot=False,
-        linewidths=0.5,
-        cbar_kws={"shrink": 0.8},
-    )
-    plt.title(
-        "Korelační matice vstupních znaků (Airline Passenger Satisfaction)",
-        fontsize=14,
-        pad=12,
-    )
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=300)
-    plt.close()
-    print(f"[INFO] Korelační matice uložena do: {output_path}")
-
-
-def print_eda_summary(train_df: pd.DataFrame, test_df: pd.DataFrame) -> None:
-    """Vypíše základní průzkum a statistiky celého datasetu (bod 3 zadání)."""
-    print("=" * 60)
-    print("1. ZÁKLADNÍ PŘEHLED DATASETU")
-    print("=" * 60)
-    print(f"Rozměry trénovací sady: {train_df.shape[0]} řádků, {train_df.shape[1]} sloupců")
-    print(f"Rozměry testovací sady: {test_df.shape[0]} řádků, {test_df.shape[1]} sloupců")
-    print(
-        f"Duplicitní řádky (train / test): "
-        f"{train_df.duplicated().sum()} / {test_df.duplicated().sum()}"
-    )
-
-    print("\nChybějící hodnoty (NaN) v trénovací sadě:")
-    missing_train = train_df.isnull().sum()
-    print(missing_train[missing_train > 0] if (missing_train > 0).any() else "Žádné")
-
-    print("\nChybějící hodnoty (NaN) v testovací sadě:")
-    missing_test = test_df.isnull().sum()
-    print(missing_test[missing_test > 0] if (missing_test > 0).any() else "Žádné")
-
-    print("\nRozložení cílové proměnné (satisfaction) v trénovací sadě:")
-    target_counts = train_df["satisfaction"].value_counts(normalize=True) * 100
-    for label, pct in target_counts.items():
-        print(f"  - {label}: {pct:.2f} %")
-
-    print("\nZákladní popisné statistiky vybraných číselných sloupců:")
-    cols_to_describe = [
-        "Age",
-        "Flight Distance",
-        "Departure Delay in Minutes",
-        "Arrival Delay in Minutes",
-    ]
-    print(train_df[cols_to_describe].describe().round(2))
-    print("=" * 60)
-
-
-def prepare_data(
-    train_path: str = "data/train.csv",
-    test_path: str = "data/test.csv",
-    scale: bool = True,
-    sample_size: int | None = None,
-    random_state: int = 42,
-    save_corr_plot: bool = True,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
-    """
-    Načte, vyčistí a předzpracuje dataset Airline Passenger Satisfaction.
-
-    Parametry:
-        train_path: Cesta k trénovacímu CSV souboru.
-        test_path: Cesta k testovacímu CSV souboru.
-        scale: Pokud True, provede StandardScaler (fit pouze na trénovacích datech).
-        sample_size: Volitelný počet řádků z train sady pro rychlé testování modelů (např. 15000).
-        random_state: Seed pro reprodukovatelnost.
-        save_corr_plot: Pokud True, uloží heatmapu korelací do složky grafy/.
-
-    Vrací:
-        X_train, X_test, y_train, y_test
-    """
-    # 1. Načtení dat
+    # 1. Načtení dat a smazání technických sloupců
     train_df = pd.read_csv(train_path)
     test_df = pd.read_csv(test_path)
 
-    # 2. Průzkumná analýza (EDA) nad celým datasetem před případným vzorkováním
-    print_eda_summary(train_df, test_df)
+    train_df = train_df.drop(columns=["Unnamed: 0", "id"], errors="ignore")
+    test_df = test_df.drop(columns=["Unnamed: 0", "id"], errors="ignore")
 
-    # Volitelné zmenšení vzorku pro rychlé ladění pomalejších modelů (např. SVC)
-    if sample_size is not None and sample_size < len(train_df):
-        train_df = train_df.sample(n=sample_size, random_state=random_state).reset_index(drop=True)
-        print(f"[INFO] Použit zmenšený trénovací vzorek: {sample_size} řádků.")
+    # 2. Základní přehled datasetu (EDA)
+    print("=== PŘEHLED DATASETU ===")
+    print(f"Train: {train_df.shape[0]} řádků, {train_df.shape[1]} sloupců")
+    print(f"Test:  {test_df.shape[0]} řádků, {test_df.shape[1]} sloupců")
+    print(f"Duplicity (train / test): {train_df.duplicated().sum()} / {test_df.duplicated().sum()}")
 
-    # 3. Odstranění zbytečných ID sloupců
-    id_cols = ["Unnamed: 0", "id"]
-    train_df = train_df.drop(columns=id_cols, errors="ignore")
-    test_df = test_df.drop(columns=id_cols, errors="ignore")
+    print("\nChybějící hodnoty v train:")
+    chybejici = train_df.isnull().sum()
+    print(chybejici[chybejici > 0])
 
-    # 4. Převod cílové proměnné na binární 0 / 1
-    target_mapping = {
-        "neutral or dissatisfied": 0,
-        "satisfied": 1,
-    }
-    y_train = train_df["satisfaction"].map(target_mapping)
-    y_test = test_df["satisfaction"].map(target_mapping)
+    print("\nRozložení cílové proměnné (satisfaction):")
+    print((train_df["satisfaction"].value_counts(normalize=True) * 100).round(2))
 
-    if y_train.isnull().any() or y_test.isnull().any():
-        raise ValueError("Ve sloupci 'satisfaction' se objevily neočekávané hodnoty.")
+    # 3. Doplnění chybějících hodnot mediánem z trénovací sady (bez úniku dat)
+    median_zpozdeni = train_df["Arrival Delay in Minutes"].median()
+    train_df["Arrival Delay in Minutes"] = train_df["Arrival Delay in Minutes"].fillna(median_zpozdeni)
+    test_df["Arrival Delay in Minutes"] = test_df["Arrival Delay in Minutes"].fillna(median_zpozdeni)
+
+    # 4. Korelační matice číselných sloupců (před zakódováním kategorií)
+    ciselne = train_df.select_dtypes(include="number")
+    korelace = ciselne.corr()
+
+    r = korelace.loc["Departure Delay in Minutes", "Arrival Delay in Minutes"]
+    print(f"\nKorelace Departure vs. Arrival Delay: {r:.3f} -> vyřazuji Arrival Delay")
+
+    plt.figure(figsize=(14, 11))
+    sns.heatmap(korelace, cmap="coolwarm", center=0, annot=True, fmt=".2f", annot_kws={"size": 7})
+    plt.title("Korelační matice číselných příznaků")
+    plt.tight_layout()
+    plt.savefig("grafy/korelacni_matice.png", dpi=300)
+    plt.close()
+
+    # Vyřazení redundantního sloupce kvůli silné korelaci
+    train_df = train_df.drop(columns=["Arrival Delay in Minutes"])
+    test_df = test_df.drop(columns=["Arrival Delay in Minutes"])
+
+    # Pro rychlý test kódu (kvůli pomalejšímu SVM) odkomentuj řádek níže:
+    # train_df = train_df.sample(15000, random_state=42)
+
+    # 5. Oddělení vstupů (X) a cílové proměnné (y: 1 = satisfied, 0 = neutral/dissatisfied)
+    y_train = (train_df["satisfaction"] == "satisfied").astype(int)
+    y_test = (test_df["satisfaction"] == "satisfied").astype(int)
 
     X_train = train_df.drop(columns=["satisfaction"])
     X_test = test_df.drop(columns=["satisfaction"])
 
-    # 5. Doplnění chybějících hodnot (medián spočítaný pouze z trénovací sady -> bez úniku dat)
-    if "Arrival Delay in Minutes" in X_train.columns:
-        median_arrival_delay = X_train["Arrival Delay in Minutes"].median()
-        X_train["Arrival Delay in Minutes"] = X_train["Arrival Delay in Minutes"].fillna(
-            median_arrival_delay
-        )
-        X_test["Arrival Delay in Minutes"] = X_test["Arrival Delay in Minutes"].fillna(
-            median_arrival_delay
-        )
-        print(
-            f"[INFO] Chybějící hodnoty v 'Arrival Delay in Minutes' "
-            f"doplněny mediánem: {median_arrival_delay}"
-        )
-
-    # 6. Korelační analýza a odstranění silně korelovaného sloupce
-    if save_corr_plot:
-        plot_correlation_matrix(X_train)
-
-    if (
-        "Arrival Delay in Minutes" in X_train.columns
-        and "Departure Delay in Minutes" in X_train.columns
-    ):
-        corr_val = X_train["Departure Delay in Minutes"].corr(X_train["Arrival Delay in Minutes"])
-        print(
-            f"[INFO] Korelace Departure vs. Arrival Delay: {corr_val:.4f} "
-            "-> odstraňuji 'Arrival Delay in Minutes'."
-        )
-        X_train = X_train.drop(columns=["Arrival Delay in Minutes"])
-        X_test = X_test.drop(columns=["Arrival Delay in Minutes"])
-
-    # 7. Převod kategorických sloupců na číselné vektory (One-Hot Encoding)
-    categorical_cols = ["Gender", "Customer Type", "Type of Travel", "Class"]
-    X_train = pd.get_dummies(X_train, columns=categorical_cols, drop_first=True, dtype=int)
-    X_test = pd.get_dummies(X_test, columns=categorical_cols, drop_first=True, dtype=int)
-
-    # Sjednocení sloupců mezi train a test sadou
+    # 6. Zakódování textových kategorií (One-Hot Encoding) a srovnání sloupců
+    X_train = pd.get_dummies(X_train, drop_first=True, dtype=int)
+    X_test = pd.get_dummies(X_test, drop_first=True, dtype=int)
     X_test = X_test.reindex(columns=X_train.columns, fill_value=0)
 
-    # 8. Standardizace dat (StandardScaler)
-    if scale:
-        scaler = StandardScaler()
-        X_train = pd.DataFrame(
-            scaler.fit_transform(X_train),
-            columns=X_train.columns,
-            index=X_train.index,
-        )
-        X_test = pd.DataFrame(
-            scaler.transform(X_test),
-            columns=X_test.columns,
-            index=X_test.index,
-        )
-        print("[INFO] Data byla standardizována pomocí StandardScaler (fit pouze na train).")
-
-    print(f"[INFO] Finální tvar dat -> X_train: {X_train.shape}, X_test: {X_test.shape}\n")
+    print(f"Data připravena: X_train {X_train.shape}, X_test {X_test.shape}\n")
     return X_train, X_test, y_train, y_test
-
-
-if __name__ == "__main__":
-    # Rychlý test modulu při přímém spuštění
-    X_train, X_test, y_train, y_test = prepare_data(
-        train_path="data/train.csv",
-        test_path="data/test.csv",
-        scale=True,
-    )
