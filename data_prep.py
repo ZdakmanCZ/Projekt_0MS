@@ -1,14 +1,26 @@
+from __future__ import annotations
+
 import os
-import pandas as pd
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.preprocessing import StandardScaler
 
 
-def plot_correlation_matrix(df: pd.DataFrame, output_path: str = "grafy/korelacni_matice.png") -> None:
+def _ensure_parent_dir(file_path: str) -> None:
+    """Bezpečně vytvoří nadřazenou složku, pokud je v cestě uvedena."""
+    parent = os.path.dirname(file_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+
+def plot_correlation_matrix(
+    df: pd.DataFrame,
+    output_path: str = "grafy/korelacni_matice.png",
+) -> None:
     """Vykreslí a uloží korelační matici číselných sloupců pro poster."""
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    _ensure_parent_dir(output_path)
 
     numeric_df = df.select_dtypes(include=[np.number])
     corr = numeric_df.corr()
@@ -20,9 +32,13 @@ def plot_correlation_matrix(df: pd.DataFrame, output_path: str = "grafy/korelacn
         center=0,
         annot=False,
         linewidths=0.5,
-        cbar_kws={"shrink": 0.8}
+        cbar_kws={"shrink": 0.8},
     )
-    plt.title("Korelační matice vstupních znaků (Airline Passenger Satisfaction)", fontsize=14, pad=12)
+    plt.title(
+        "Korelační matice vstupních znaků (Airline Passenger Satisfaction)",
+        fontsize=14,
+        pad=12,
+    )
     plt.tight_layout()
     plt.savefig(output_path, dpi=300)
     plt.close()
@@ -30,12 +46,16 @@ def plot_correlation_matrix(df: pd.DataFrame, output_path: str = "grafy/korelacn
 
 
 def print_eda_summary(train_df: pd.DataFrame, test_df: pd.DataFrame) -> None:
-    """Vypíše základní průzkum a statistiky datasetu (bod 3 zadání)."""
+    """Vypíše základní průzkum a statistiky celého datasetu (bod 3 zadání)."""
     print("=" * 60)
     print("1. ZÁKLADNÍ PŘEHLED DATASETU")
     print("=" * 60)
     print(f"Rozměry trénovací sady: {train_df.shape[0]} řádků, {train_df.shape[1]} sloupců")
     print(f"Rozměry testovací sady: {test_df.shape[0]} řádků, {test_df.shape[1]} sloupců")
+    print(
+        f"Duplicitní řádky (train / test): "
+        f"{train_df.duplicated().sum()} / {test_df.duplicated().sum()}"
+    )
 
     print("\nChybějící hodnoty (NaN) v trénovací sadě:")
     missing_train = train_df.isnull().sum()
@@ -51,7 +71,12 @@ def print_eda_summary(train_df: pd.DataFrame, test_df: pd.DataFrame) -> None:
         print(f"  - {label}: {pct:.2f} %")
 
     print("\nZákladní popisné statistiky vybraných číselných sloupců:")
-    cols_to_describe = ["Age", "Flight Distance", "Departure Delay in Minutes", "Arrival Delay in Minutes"]
+    cols_to_describe = [
+        "Age",
+        "Flight Distance",
+        "Departure Delay in Minutes",
+        "Arrival Delay in Minutes",
+    ]
     print(train_df[cols_to_describe].describe().round(2))
     print("=" * 60)
 
@@ -71,7 +96,7 @@ def prepare_data(
         train_path: Cesta k trénovacímu CSV souboru.
         test_path: Cesta k testovacímu CSV souboru.
         scale: Pokud True, provede StandardScaler (fit pouze na trénovacích datech).
-        sample_size: Volitelný počet řádků z train sady pro rychlé testování modelů (např. 10000).
+        sample_size: Volitelný počet řádků z train sady pro rychlé testování modelů (např. 15000).
         random_state: Seed pro reprodukovatelnost.
         save_corr_plot: Pokud True, uloží heatmapu korelací do složky grafy/.
 
@@ -82,13 +107,13 @@ def prepare_data(
     train_df = pd.read_csv(train_path)
     test_df = pd.read_csv(test_path)
 
-    # Volitelné zmenšení vzorku pro rychlé ladění pomalejších modelů (např. SVC / k-NN)
+    # 2. Průzkumná analýza (EDA) nad celým datasetem před případným vzorkováním
+    print_eda_summary(train_df, test_df)
+
+    # Volitelné zmenšení vzorku pro rychlé ladění pomalejších modelů (např. SVC)
     if sample_size is not None and sample_size < len(train_df):
         train_df = train_df.sample(n=sample_size, random_state=random_state).reset_index(drop=True)
         print(f"[INFO] Použit zmenšený trénovací vzorek: {sample_size} řádků.")
-
-    # 2. Průzkumná analýza (EDA)
-    print_eda_summary(train_df, test_df)
 
     # 3. Odstranění zbytečných ID sloupců
     id_cols = ["Unnamed: 0", "id"]
@@ -112,17 +137,30 @@ def prepare_data(
     # 5. Doplnění chybějících hodnot (medián spočítaný pouze z trénovací sady -> bez úniku dat)
     if "Arrival Delay in Minutes" in X_train.columns:
         median_arrival_delay = X_train["Arrival Delay in Minutes"].median()
-        X_train["Arrival Delay in Minutes"] = X_train["Arrival Delay in Minutes"].fillna(median_arrival_delay)
-        X_test["Arrival Delay in Minutes"] = X_test["Arrival Delay in Minutes"].fillna(median_arrival_delay)
-        print(f"[INFO] Chybějící hodnoty v 'Arrival Delay in Minutes' doplněny mediánem: {median_arrival_delay}")
+        X_train["Arrival Delay in Minutes"] = X_train["Arrival Delay in Minutes"].fillna(
+            median_arrival_delay
+        )
+        X_test["Arrival Delay in Minutes"] = X_test["Arrival Delay in Minutes"].fillna(
+            median_arrival_delay
+        )
+        print(
+            f"[INFO] Chybějící hodnoty v 'Arrival Delay in Minutes' "
+            f"doplněny mediánem: {median_arrival_delay}"
+        )
 
     # 6. Korelační analýza a odstranění silně korelovaného sloupce
     if save_corr_plot:
         plot_correlation_matrix(X_train)
 
-    if "Arrival Delay in Minutes" in X_train.columns and "Departure Delay in Minutes" in X_train.columns:
+    if (
+        "Arrival Delay in Minutes" in X_train.columns
+        and "Departure Delay in Minutes" in X_train.columns
+    ):
         corr_val = X_train["Departure Delay in Minutes"].corr(X_train["Arrival Delay in Minutes"])
-        print(f"[INFO] Korelace Departure vs. Arrival Delay: {corr_val:.4f} -> odstraňuji 'Arrival Delay in Minutes'.")
+        print(
+            f"[INFO] Korelace Departure vs. Arrival Delay: {corr_val:.4f} "
+            "-> odstraňuji 'Arrival Delay in Minutes'."
+        )
         X_train = X_train.drop(columns=["Arrival Delay in Minutes"])
         X_test = X_test.drop(columns=["Arrival Delay in Minutes"])
 
@@ -131,7 +169,7 @@ def prepare_data(
     X_train = pd.get_dummies(X_train, columns=categorical_cols, drop_first=True, dtype=int)
     X_test = pd.get_dummies(X_test, columns=categorical_cols, drop_first=True, dtype=int)
 
-    # Sjednocení sloupců mezi train a test sadou (pro jistotu, kdyby v testu některá kategorie chyběla)
+    # Sjednocení sloupců mezi train a test sadou
     X_test = X_test.reindex(columns=X_train.columns, fill_value=0)
 
     # 8. Standardizace dat (StandardScaler)
